@@ -83,11 +83,12 @@ export async function generatePDF(markdown: string) {
         element.style.marginBottom = '12px';
         element.style.color = '#000000';
       } else if (element.tagName === 'CODE' && element.parentElement?.tagName !== 'PRE') {
-        element.style.backgroundColor = '#f3f4f6';
-        element.style.color = '#1f2937';
+        element.style.backgroundColor = '#fdf2f8';
+        element.style.color = '#db2777';
+        element.style.border = '1px solid #fbcfe8';
         element.style.padding = '2px 6px';
-        element.style.borderRadius = '3px';
-        element.style.fontSize = '14px';
+        element.style.borderRadius = '4px';
+        element.style.fontSize = '13px';
         element.style.fontFamily = 'monospace';
       } else if (element.tagName === 'CODE' && element.parentElement?.tagName === 'PRE') {
         element.style.backgroundColor = 'transparent';

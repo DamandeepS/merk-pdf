@@ -26,8 +26,44 @@ body {
   font-family: var(--font-plus-jakarta-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+pre {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+}
+
 pre code.hljs,
 pre code {
   background: transparent !important;
   padding: 0 !important;
+  color: #f8fafc !important;
+  font-family: inherit !important;
+}
+
+pre .hljs {
+  color: #f8fafc !important;
+}
+
+/* Ensure code comments inside dark code blocks are clearly legible */
+pre .hljs-comment,
+pre .hljs-quote {
+  color: #94a3b8 !important;
+}
+
+/* Fallback styling for inline code elements - stylish pink badge accent */
+:not(pre) > code {
+  color: #db2777 !important;
+  background-color: #fdf2f8 !important;
+  border: 1px solid #fbcfe8 !important;
+  padding: 0.125rem 0.375rem !important;
+  border-radius: 0.375rem !important;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.88em !important;
+  font-weight: 500 !important;
+}
+
+.dark :not(pre) > code {
+  color: #f472b6 !important;
+  background-color: rgba(244, 114, 182, 0.12) !important;
+  border-color: rgba(244, 114, 182, 0.28) !important;
 }

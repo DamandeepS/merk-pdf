@@ -203,9 +203,15 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
             const match = /language-(\w+)/.exec(className || '');
             const lang = match?.[1];
             const codeString = String(children).replace(/\n$/, '');
+            const isCodeBlock = Boolean(
+              inline === false ||
+              className?.includes('language-') ||
+              (typeof children === 'string' && children.endsWith('\n')) ||
+              (node?.position?.start?.line !== node?.position?.end?.line)
+            );
 
             // Handle mermaid diagrams
-            if (lang === 'mermaid' && !inline) {
+            if (lang === 'mermaid' && isCodeBlock) {
               const cacheKey = `${theme}:${codeString}`;
               const cachedSvg = mermaidSvgCache.get(cacheKey);
 
@@ -234,29 +240,32 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
               );
             }
 
-            // Inline code
-            const isInline = inline || !node?.parent || node.parent.tagName !== 'pre';
-
-            if (isInline && !lang) {
+            // Inline code (e.g. `grid[10000][10000]`)
+            if (!isCodeBlock) {
               return (
                 <code
-                  className={`not-prose px-2 py-0.5 rounded font-mono ${
-                    isDark
-                      ? 'bg-slate-800 text-pink-400 border border-slate-700'
-                      : 'bg-slate-100 text-pink-600 border border-slate-200'
-                  }`}
-                  style={{ fontSize: '0.88em', fontWeight: 500 }}
+                  className="not-prose px-1.5 py-0.5 rounded-md font-mono text-[0.88em] font-medium border transition-colors"
+                  style={{
+                    color: isDark ? '#f472b6' : '#db2777',
+                    backgroundColor: isDark ? 'rgba(244, 114, 182, 0.12)' : '#fdf2f8',
+                    borderColor: isDark ? 'rgba(244, 114, 182, 0.28)' : '#fbcfe8',
+                  }}
                 >
                   {children}
                 </code>
               );
             }
 
-            // Code blocks
+            // Code blocks inside <pre>
             return (
               <code
-                className={`${className || ''} !bg-transparent !p-0`}
-                style={{ backgroundColor: 'transparent', padding: 0 }}
+                className={`${className || ''} !bg-transparent !p-0 font-mono`}
+                style={{
+                  backgroundColor: 'transparent',
+                  padding: 0,
+                  color: '#f8fafc',
+                  fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                }}
                 {...props}
               >
                 {children}
@@ -290,13 +299,15 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
 
             return (
               <pre
-                className="not-prose overflow-x-auto my-4 rounded-lg"
+                className="not-prose overflow-x-auto my-4 rounded-xl border border-slate-700/80 shadow-sm font-mono text-slate-100"
                 style={{
-                  backgroundColor: '#2E3440',
+                  backgroundColor: '#1e293b',
+                  color: '#f8fafc',
                   padding: '1.25rem 1.5rem',
                   margin: '1.5rem 0',
                   fontSize: '0.9rem',
-                  lineHeight: '1.6'
+                  lineHeight: '1.6',
+                  fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
                 }}
               >
                 {children}
