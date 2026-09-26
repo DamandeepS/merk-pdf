@@ -134,38 +134,10 @@ export default function MarkdownEditor() {
   const handleExportPDF = async () => {
     if (isExporting) return;
 
-    let fileHandle: any = null;
-
-    // Give user choice of location and name using native Save File Picker
-    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
-      try {
-        const titleMatch = markdown.match(/^#\s+(.+)$/m);
-        const suggestedName = titleMatch
-          ? `${titleMatch[1].trim().replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}.pdf`
-          : 'document.pdf';
-
-        fileHandle = await (window as any).showSaveFilePicker({
-          suggestedName,
-          types: [
-            {
-              description: 'PDF Document (*.pdf)',
-              accept: { 'application/pdf': ['.pdf'] },
-            },
-          ],
-        });
-      } catch (err: any) {
-        // User clicked Cancel in the native file picker
-        if (err.name === 'AbortError') {
-          return;
-        }
-        console.warn('showSaveFilePicker fallback:', err);
-      }
-    }
-
     try {
       setIsExporting(true);
-      await generatePDF(markdown, fileHandle);
-      showToast('PDF saved successfully!', 'success');
+      await generatePDF(markdown);
+      showToast('PDF downloaded successfully!', 'success');
     } catch (error) {
       console.error('PDF generation failed:', error);
       showToast('Failed to generate PDF. Please try again.', 'error');
@@ -246,39 +218,20 @@ export default function MarkdownEditor() {
     });
   };
 
-  const handleDownloadMarkdown = async () => {
+  const handleDownloadMarkdown = () => {
     const titleMatch = markdown.match(/^#\s+(.+)$/m);
     const suggestedName = titleMatch
       ? `${titleMatch[1].trim().replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}.md`
       : 'document.md';
 
-    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName,
-          types: [
-            {
-              description: 'Markdown Document (*.md)',
-              accept: { 'text/markdown': ['.md', '.markdown'] },
-            },
-          ],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(markdown);
-        await writable.close();
-        showToast('Markdown saved successfully!', 'success');
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-
-    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = suggestedName;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast('Markdown downloaded', 'success');
   };

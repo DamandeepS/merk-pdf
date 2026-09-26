@@ -1,4 +1,4 @@
-export async function generatePDF(markdown: string, fileHandle?: any) {
+export async function generatePDF(markdown: string) {
   const previewElement = document.getElementById('markdown-preview');
   if (!previewElement) {
     throw new Error('Preview element not found');
@@ -181,42 +181,7 @@ export async function generatePDF(markdown: string, fileHandle?: any) {
       ? `${titleMatch[1].trim().replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}.pdf`
       : 'document.pdf';
 
-    // If caller already got a FileSystemFileHandle from the user
-    if (fileHandle) {
-      const pdfBlob = pdf.output('blob');
-      const writable = await fileHandle.createWritable();
-      await writable.write(pdfBlob);
-      await writable.close();
-      return;
-    }
-
-    // If File System Access API is supported and no handle was pre-passed
-    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [
-            {
-              description: 'PDF Document (*.pdf)',
-              accept: { 'application/pdf': ['.pdf'] },
-            },
-          ],
-        });
-        const pdfBlob = pdf.output('blob');
-        const writable = await handle.createWritable();
-        await writable.write(pdfBlob);
-        await writable.close();
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          // User clicked Cancel in the save dialog
-          return;
-        }
-        console.warn('File picker error, falling back:', err);
-      }
-    }
-
-    // Fallback for browsers without File System Access API
+    // Standard secure browser download (completely sandboxed, no file system permissions needed)
     pdf.save(fileName);
   } catch (error) {
     console.error('PDF generation error:', error);
