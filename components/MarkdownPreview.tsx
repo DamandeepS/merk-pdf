@@ -134,7 +134,7 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeHighlight]}
+        rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: false }]]}
         components={{
           h1: ({ children }) => (
             <h1
@@ -264,7 +264,9 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
                   backgroundColor: 'transparent',
                   padding: 0,
                   color: '#f8fafc',
-                  fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                  fontFamily: 'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
+                  letterSpacing: '0px',
+                  fontVariantEastAsian: 'normal',
                 }}
                 {...props}
               >
@@ -305,9 +307,14 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
                   color: '#f8fafc',
                   padding: '1.25rem 1.5rem',
                   margin: '1.5rem 0',
-                  fontSize: '0.9rem',
-                  lineHeight: '1.6',
-                  fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                  fontSize: '0.85rem',
+                  lineHeight: '1.5',
+                  fontFamily: 'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
+                  letterSpacing: '0px',
+                  fontVariantEastAsian: 'normal',
+                  whiteSpace: 'pre',
+                  wordSpacing: 'normal',
+                  tabSize: 4,
                 }}
               >
                 {children}

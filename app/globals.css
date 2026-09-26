@@ -29,7 +29,12 @@ body {
 pre {
   background-color: #1e293b !important;
   color: #f8fafc !important;
-  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family: ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace !important;
+  font-variant-east-asian: normal !important;
+  letter-spacing: 0px !important;
+  white-space: pre !important;
+  word-spacing: normal !important;
+  tab-size: 4 !important;
 }
 
 pre code.hljs,
@@ -38,6 +43,9 @@ pre code {
   padding: 0 !important;
   color: #f8fafc !important;
   font-family: inherit !important;
+  font-variant-east-asian: inherit !important;
+  letter-spacing: 0px !important;
+  white-space: pre !important;
 }
 
 pre .hljs {

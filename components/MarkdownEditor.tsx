@@ -236,6 +236,7 @@ export default function MarkdownEditor() {
     showToast('Markdown downloaded', 'success');
   };
 
+
   const handleFullscreen = () => {
     if (!isFullscreen && previewRef.current) {
       if (previewRef.current.requestFullscreen) {
