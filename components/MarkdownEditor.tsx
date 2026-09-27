@@ -29,6 +29,8 @@ const STORAGE_KEY = 'merk_markdown_content';
 const THEME_KEY = 'merk_theme';
 const VIEW_MODE_KEY = 'merk_view_mode';
 const PAGE_NUMBERS_KEY = 'merk_include_page_numbers';
+const VISITED_KEY = 'merk_has_visited';
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB maximum file size to protect against DoS
 
 const defaultMarkdown = `# Welcome to Markdown Editor
 
@@ -53,7 +55,7 @@ function greet(name) {
   return \`Hello, \${name}! Welcome to our editor.\`;
 }
 
-console.log(greet("World"));
+greet("World");
 \`\`\`
 
 You can also use inline code like \`const x = 42;\` within paragraphs.
@@ -100,9 +102,12 @@ export default function MarkdownEditor() {
         if (saved !== null) {
           return saved;
         }
-      } catch (e) {
-        console.warn('Failed to load markdown from localStorage:', e);
-      }
+        // If user previously cleared their editor, preserve empty state
+        const hasVisited = localStorage.getItem(VISITED_KEY);
+        if (hasVisited === 'true') {
+          return '';
+        }
+      } catch {}
     }
     return defaultMarkdown;
   });
@@ -141,23 +146,29 @@ export default function MarkdownEditor() {
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Synchronously update state and persist to localStorage
+  // Synchronously update state and persist or remove from localStorage
   const handleMarkdownChange = (newContent: string) => {
     setMarkdown(newContent);
     try {
-      localStorage.setItem(STORAGE_KEY, newContent);
-    } catch (e) {
-      console.warn('Failed to persist markdown to localStorage:', e);
-    }
+      if (newContent.trim()) {
+        localStorage.setItem(STORAGE_KEY, newContent);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      localStorage.setItem(VISITED_KEY, 'true');
+    } catch {}
   };
 
   // Sync changes to localStorage whenever markdown changes
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, markdown);
-    } catch (e) {
-      console.warn('Failed to persist markdown to localStorage:', e);
-    }
+      if (markdown.trim()) {
+        localStorage.setItem(STORAGE_KEY, markdown);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      localStorage.setItem(VISITED_KEY, 'true');
+    } catch {}
   }, [markdown]);
 
   // Persist theme changes
@@ -186,7 +197,12 @@ export default function MarkdownEditor() {
     const handleBeforeUnload = () => {
       if (textareaRef.current) {
         try {
-          localStorage.setItem(STORAGE_KEY, textareaRef.current.value);
+          const val = textareaRef.current.value;
+          if (val.trim()) {
+            localStorage.setItem(STORAGE_KEY, val);
+          } else {
+            localStorage.removeItem(STORAGE_KEY);
+          }
         } catch {}
       }
     };
@@ -235,8 +251,7 @@ export default function MarkdownEditor() {
       setIsExporting(true);
       await generatePDF(markdown, { includePageNumbers });
       showToast('PDF downloaded successfully!', 'success');
-    } catch (error) {
-      console.error('PDF generation failed:', error);
+    } catch {
       showToast('Failed to generate PDF. Please try again.', 'error');
     } finally {
       setIsExporting(false);
@@ -246,11 +261,25 @@ export default function MarkdownEditor() {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (file.size > MAX_FILE_SIZE) {
+        showToast('File size exceeds 5MB limit', 'error');
+        event.target.value = '';
+        return;
+      }
+      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt');
+      if (!isText) {
+        showToast('Invalid file format. Please upload a .md, .markdown, or .txt file.', 'error');
+        event.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
-        const content = e.target?.result as string;
+        const content = typeof e.target?.result === 'string' ? e.target.result : '';
         handleMarkdownChange(content);
         showToast(`Loaded ${file.name}`, 'success');
+      };
+      reader.onerror = () => {
+        showToast('Failed to read file', 'error');
       };
       reader.readAsText(file);
     }
@@ -262,12 +291,24 @@ export default function MarkdownEditor() {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt'))) {
+    if (file) {
+      if (file.size > MAX_FILE_SIZE) {
+        showToast('File size exceeds 5MB limit', 'error');
+        return;
+      }
+      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt');
+      if (!isText) {
+        showToast('Invalid file format. Please drop a .md, .markdown, or .txt file.', 'error');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const content = ev.target?.result as string;
+        const content = typeof ev.target?.result === 'string' ? ev.target.result : '';
         handleMarkdownChange(content);
         showToast(`Loaded ${file.name}`, 'success');
+      };
+      reader.onerror = () => {
+        showToast('Failed to read file', 'error');
       };
       reader.readAsText(file);
     }
@@ -279,8 +320,7 @@ export default function MarkdownEditor() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       showToast('Markdown copied to clipboard', 'info');
-    } catch (err) {
-      console.error('Failed to copy', err);
+    } catch {
       showToast('Failed to copy to clipboard', 'error');
     }
   };
@@ -289,13 +329,17 @@ export default function MarkdownEditor() {
     setConfirmModal({
       isOpen: true,
       title: 'Clear Editor Content?',
-      description: 'This will remove all text currently in the editor. This action cannot be undone.',
+      description: 'This will remove all text currently in the editor and delete it from storage. This action cannot be undone.',
       confirmText: 'Clear All',
       variant: 'danger',
       action: () => {
-        handleMarkdownChange('');
+        setMarkdown('');
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.setItem(VISITED_KEY, 'true');
+        } catch {}
         setConfirmModal(null);
-        showToast('Editor cleared', 'info');
+        showToast('Editor cleared and removed from storage', 'info');
       },
     });
   };

@@ -28,15 +28,6 @@ export async function generatePDF(markdown: string, options: PDFExportOptions = 
       documentTitle.replace(/[^a-zA-Z0-9-_\s]/g, '').trim().replace(/\s+/g, '_') || 'document'
     ) + '.pdf';
 
-    // Helper to escape HTML characters
-    const escapeHtml = (str: string) =>
-      str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-
     // 1. Setup measuring container offscreen with identical printable width (698px)
     measuringContainer = document.createElement('div');
     measuringContainer.id = 'pdf-measuring-sandbox';
@@ -253,7 +244,6 @@ export async function generatePDF(markdown: string, options: PDFExportOptions = 
       // Add to measuring host to see rendered cumulative height including margin collapse
       testHost.appendChild(block);
       const measuredHeight = testHost.offsetHeight;
-      console.log(`[PAGINATION_DEBUG] i=${i} Tag=${block.tagName} measuredHeight=${measuredHeight} PAGE_MAX_HEIGHT=${PAGE_MAX_HEIGHT} pagesCount=${pages.length}`);
 
       // If adding this block overflows the page:
       if (measuredHeight > PAGE_MAX_HEIGHT && testHost.children.length > 1) {
@@ -386,9 +376,6 @@ export async function generatePDF(markdown: string, options: PDFExportOptions = 
 
     // 5. Save PDF download
     pdf.save(cleanFileName);
-  } catch (error) {
-    console.error('PDF generation error:', error);
-    throw error;
   } finally {
     // 6. Guarantee cleanup of temporary DOM nodes
     if (measuringContainer && measuringContainer.parentNode) {
