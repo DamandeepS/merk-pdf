@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, createContext, useContext } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -14,6 +14,8 @@ interface MarkdownPreviewProps {
   markdown: string;
   theme?: 'light' | 'dark';
 }
+
+const InPreContext = createContext<boolean>(false);
 
 // Module-level in-memory cache for rendered Mermaid SVGs: key = `${theme}:${code}`
 const mermaidSvgCache = new Map<string, string>();
@@ -200,18 +202,13 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
             </p>
           ),
           code({ node, inline, className, children, ...props }: any) {
+            const isInPre = useContext(InPreContext);
             const match = /language-(\w+)/.exec(className || '');
             const lang = match?.[1];
             const codeString = String(children).replace(/\n$/, '');
-            const isCodeBlock = Boolean(
-              inline === false ||
-              className?.includes('language-') ||
-              (typeof children === 'string' && children.endsWith('\n')) ||
-              (node?.position?.start?.line !== node?.position?.end?.line)
-            );
 
             // Handle mermaid diagrams
-            if (lang === 'mermaid' && isCodeBlock) {
+            if (lang === 'mermaid') {
               const cacheKey = `${theme}:${codeString}`;
               const cachedSvg = mermaidSvgCache.get(cacheKey);
 
@@ -240,11 +237,11 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
               );
             }
 
-            // Inline code (e.g. `grid[10000][10000]`)
-            if (!isCodeBlock) {
+            // Inline code (e.g. `grid[10000][10000]`) - only when NOT inside <pre>
+            if (!isInPre) {
               return (
                 <code
-                  className="not-prose px-1.5 py-0.5 rounded-md font-mono text-[0.88em] font-medium border transition-colors"
+                  className="not-prose inline-block px-1.5 py-0.5 rounded-md font-mono text-[0.88em] font-medium border transition-colors"
                   style={{
                     color: isDark ? '#f472b6' : '#db2777',
                     backgroundColor: isDark ? 'rgba(244, 114, 182, 0.12)' : '#fdf2f8',
@@ -286,41 +283,50 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
 
             if (isMermaidFromNode || isMermaidFromChildren) {
               return (
-                <div
-                  data-mermaid-container="true"
-                  className={`not-prose my-6 p-6 rounded-xl overflow-x-auto flex justify-center items-center border transition-colors ${
-                    isDark
-                      ? 'bg-slate-800/60 border-slate-700/80 shadow-xs'
-                      : 'bg-slate-50 border-slate-200/90 shadow-xs'
-                  }`}
-                >
-                  {children}
-                </div>
+                <InPreContext.Provider value={true}>
+                  <div
+                    data-mermaid-container="true"
+                    className={`not-prose my-6 p-6 rounded-xl overflow-x-auto flex justify-center items-center border transition-colors ${
+                      isDark
+                        ? 'bg-slate-800/60 border-slate-700/80 shadow-xs'
+                        : 'bg-slate-50 border-slate-200/90 shadow-xs'
+                    }`}
+                  >
+                    {children}
+                  </div>
+                </InPreContext.Provider>
               );
             }
 
             return (
-              <pre
-                className="not-prose overflow-x-auto my-4 rounded-xl border border-slate-700/80 shadow-sm font-mono text-slate-100"
-                style={{
-                  backgroundColor: '#1e293b',
-                  color: '#f8fafc',
-                  padding: '1.25rem 1.5rem',
-                  margin: '1.5rem 0',
-                  fontSize: '0.85rem',
-                  lineHeight: '1.5',
-                  fontFamily: 'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
-                  letterSpacing: '0px',
-                  fontVariantEastAsian: 'normal',
-                  whiteSpace: 'pre',
-                  wordSpacing: 'normal',
-                  tabSize: 4,
-                }}
-              >
-                {children}
-              </pre>
+              <InPreContext.Provider value={true}>
+                <pre
+                  className="not-prose overflow-x-auto my-4 rounded-xl border border-slate-700/80 shadow-sm font-mono text-slate-100"
+                  style={{
+                    backgroundColor: '#1e293b',
+                    color: '#f8fafc',
+                    padding: '1.25rem 1.5rem',
+                    margin: '1.5rem 0',
+                    fontSize: '0.85rem',
+                    lineHeight: '1.5',
+                    fontFamily: 'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
+                    letterSpacing: '0px',
+                    fontVariantEastAsian: 'normal',
+                    whiteSpace: 'pre',
+                    wordSpacing: 'normal',
+                    tabSize: 4,
+                  }}
+                >
+                  {children}
+                </pre>
+              </InPreContext.Provider>
             );
           },
+          hr: () => (
+            <hr
+              className="my-6 border-t border-slate-200 dark:border-slate-800"
+            />
+          ),
           ul: ({ children }) => (
             <ul className="list-disc list-outside my-4 ml-6 space-y-1" style={{ color: bodyColor }}>
               {children}

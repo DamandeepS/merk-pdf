@@ -94,6 +94,7 @@ export default function MarkdownEditor() {
   const [viewMode, setViewMode] = useState<'split' | 'editor' | 'preview'>('split');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [includePageNumbers, setIncludePageNumbers] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -136,7 +137,7 @@ export default function MarkdownEditor() {
 
     try {
       setIsExporting(true);
-      await generatePDF(markdown);
+      await generatePDF(markdown, { includePageNumbers });
       showToast('PDF downloaded successfully!', 'success');
     } catch (error) {
       console.error('PDF generation failed:', error);
@@ -547,6 +548,23 @@ export default function MarkdownEditor() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <label
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border cursor-pointer select-none transition-colors ${
+                      includePageNumbers
+                        ? (isDark ? 'bg-blue-950/60 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-700')
+                        : (isDark ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900')
+                    }`}
+                    title="Toggle page numbers in exported PDF"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={includePageNumbers}
+                      onChange={(e) => setIncludePageNumbers(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                    />
+                    <span>Page Numbers</span>
+                  </label>
+
                   <button
                     onClick={handleExportPDF}
                     disabled={isExporting}
