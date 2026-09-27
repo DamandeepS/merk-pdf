@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import MarkdownPreview from './MarkdownPreview';
 import {
   Download,
@@ -13,7 +13,6 @@ import {
   Maximize2,
   Minimize2,
   FileDown,
-  Sparkles,
   Columns2,
   Eye,
   FileEdit,
@@ -25,6 +24,11 @@ import {
   X
 } from 'lucide-react';
 import { generatePDF } from '@/lib/pdfGenerator';
+
+const STORAGE_KEY = 'merk_markdown_content';
+const THEME_KEY = 'merk_theme';
+const VIEW_MODE_KEY = 'merk_view_mode';
+const PAGE_NUMBERS_KEY = 'merk_include_page_numbers';
 
 const defaultMarkdown = `# Welcome to Markdown Editor
 
@@ -89,14 +93,106 @@ graph LR
 `;
 
 export default function MarkdownEditor() {
-  const [markdown, setMarkdown] = useState(defaultMarkdown);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [viewMode, setViewMode] = useState<'split' | 'editor' | 'preview'>('split');
+  const [markdown, setMarkdown] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved !== null) {
+          return saved;
+        }
+      } catch (e) {
+        console.warn('Failed to load markdown from localStorage:', e);
+      }
+    }
+    return defaultMarkdown;
+  });
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === 'dark' || saved === 'light') return saved;
+      } catch {}
+    }
+    return 'light';
+  });
+
+  const [viewMode, setViewMode] = useState<'split' | 'editor' | 'preview'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(VIEW_MODE_KEY);
+        if (saved === 'split' || saved === 'editor' || saved === 'preview') return saved;
+      } catch {}
+    }
+    return 'split';
+  });
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [includePageNumbers, setIncludePageNumbers] = useState(false);
+  const [includePageNumbers, setIncludePageNumbers] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(PAGE_NUMBERS_KEY);
+        if (saved !== null) return saved === 'true';
+      } catch {}
+    }
+    return false;
+  });
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Synchronously update state and persist to localStorage
+  const handleMarkdownChange = (newContent: string) => {
+    setMarkdown(newContent);
+    try {
+      localStorage.setItem(STORAGE_KEY, newContent);
+    } catch (e) {
+      console.warn('Failed to persist markdown to localStorage:', e);
+    }
+  };
+
+  // Sync changes to localStorage whenever markdown changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, markdown);
+    } catch (e) {
+      console.warn('Failed to persist markdown to localStorage:', e);
+    }
+  }, [markdown]);
+
+  // Persist theme changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {}
+  }, [theme]);
+
+  // Persist view mode changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    } catch {}
+  }, [viewMode]);
+
+  // Persist page number preferences
+  useEffect(() => {
+    try {
+      localStorage.setItem(PAGE_NUMBERS_KEY, String(includePageNumbers));
+    } catch {}
+  }, [includePageNumbers]);
+
+  // Safety net: capture latest textarea value immediately on beforeunload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (textareaRef.current) {
+        try {
+          localStorage.setItem(STORAGE_KEY, textareaRef.current.value);
+        } catch {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // In-app modal confirmation dialog state
   const [confirmModal, setConfirmModal] = useState<{
@@ -153,7 +249,7 @@ export default function MarkdownEditor() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const content = e.target?.result as string;
-        setMarkdown(content);
+        handleMarkdownChange(content);
         showToast(`Loaded ${file.name}`, 'success');
       };
       reader.readAsText(file);
@@ -170,7 +266,7 @@ export default function MarkdownEditor() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const content = ev.target?.result as string;
-        setMarkdown(content);
+        handleMarkdownChange(content);
         showToast(`Loaded ${file.name}`, 'success');
       };
       reader.readAsText(file);
@@ -197,7 +293,7 @@ export default function MarkdownEditor() {
       confirmText: 'Clear All',
       variant: 'danger',
       action: () => {
-        setMarkdown('');
+        handleMarkdownChange('');
         setConfirmModal(null);
         showToast('Editor cleared', 'info');
       },
@@ -212,7 +308,7 @@ export default function MarkdownEditor() {
       confirmText: 'Reset Document',
       variant: 'primary',
       action: () => {
-        setMarkdown(defaultMarkdown);
+        handleMarkdownChange(defaultMarkdown);
         setConfirmModal(null);
         showToast('Reset to sample tutorial', 'success');
       },
@@ -493,7 +589,7 @@ export default function MarkdownEditor() {
                 <textarea
                   ref={textareaRef}
                   value={markdown}
-                  onChange={(e) => setMarkdown(e.target.value)}
+                  onChange={(e) => handleMarkdownChange(e.target.value)}
                   className={`w-full h-full p-4 font-mono text-sm leading-relaxed resize-none focus:outline-none transition-colors ${
                     isDark
                       ? 'bg-slate-950 text-slate-200 placeholder-slate-600'
@@ -515,7 +611,7 @@ export default function MarkdownEditor() {
                 </div>
                 <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Ready</span>
+                  <span>Saved</span>
                 </div>
               </div>
             </div>

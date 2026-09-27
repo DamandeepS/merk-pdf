@@ -253,6 +253,7 @@ export async function generatePDF(markdown: string, options: PDFExportOptions = 
       // Add to measuring host to see rendered cumulative height including margin collapse
       testHost.appendChild(block);
       const measuredHeight = testHost.offsetHeight;
+      console.log(`[PAGINATION_DEBUG] i=${i} Tag=${block.tagName} measuredHeight=${measuredHeight} PAGE_MAX_HEIGHT=${PAGE_MAX_HEIGHT} pagesCount=${pages.length}`);
 
       // If adding this block overflows the page:
       if (measuredHeight > PAGE_MAX_HEIGHT && testHost.children.length > 1) {
