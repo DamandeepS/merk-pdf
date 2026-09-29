@@ -1,14 +1,26 @@
 'use client';
 
-import { useEffect, useRef, createContext, useContext } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
+import { common } from 'lowlight';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import nginx from 'highlight.js/lib/languages/nginx';
 import mermaid from 'mermaid';
+import { Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { isAsciiDiagram } from '@/lib/diagramUtils';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/nord.css';
+
+const highlightLanguages = {
+  ...common,
+  dockerfile,
+  docker: dockerfile,
+  nginx,
+};
 
 interface MarkdownPreviewProps {
   markdown: string;
@@ -18,7 +30,7 @@ interface MarkdownPreviewProps {
 const InPreContext = createContext<boolean>(false);
 const MarkdownThemeContext = createContext<'light' | 'dark'>('light');
 
-// Module-level in-memory cache for rendered Mermaid SVGs: key = `${theme}:${code}`
+// In-memory cache for rendered Mermaid SVGs: key = `${theme}:${code}`
 const mermaidSvgCache = new Map<string, string>();
 
 /**
@@ -27,7 +39,6 @@ const mermaidSvgCache = new Map<string, string>();
 function isSafeUrl(url?: string): boolean {
   if (!url) return false;
   const trimmed = url.trim();
-  // Safe relative paths and internal anchors
   if (trimmed.startsWith('#') || trimmed.startsWith('/')) {
     return true;
   }
@@ -81,7 +92,7 @@ function SafeAnchor({ href, children }: React.ComponentPropsWithoutRef<'a'>) {
   return (
     <a
       href={safeHref}
-      className="text-blue-600 hover:text-blue-700 underline font-medium transition-colors"
+      className="text-blue-600 dark:text-blue-400 hover:underline font-medium transition-colors"
       target={isExternal ? '_blank' : undefined}
       rel={isExternal ? 'noopener noreferrer' : undefined}
     >
@@ -103,8 +114,184 @@ function SafeImage({ src, alt }: React.ComponentPropsWithoutRef<'img'>) {
       alt={alt || 'Document image'}
       loading="lazy"
       decoding="async"
-      className="max-w-full h-auto rounded-lg my-4 border border-slate-200 dark:border-slate-800"
+      className="max-w-full h-auto rounded-lg my-4 border border-slate-200 dark:border-slate-800 shadow-xs"
     />
+  );
+}
+
+/**
+ * Isolated, declarative Mermaid diagram component.
+ * Manages its own rendering state so React virtual DOM reconciliation
+ * is never broken by direct innerHTML mutations.
+ */
+function MermaidBlock({ code, theme }: { code: string; theme: 'light' | 'dark' }) {
+  const cacheKey = `${theme}:${code}`;
+  const cachedSvg = mermaidSvgCache.get(cacheKey);
+
+  const [renderedSvg, setRenderedSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const uniqueId = useId().replace(/:/g, '');
+  const isDark = theme === 'dark';
+
+  const svg = cachedSvg || renderedSvg;
+
+  useEffect(() => {
+    if (mermaidSvgCache.has(cacheKey)) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const renderDiagram = async () => {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: isDark ? 'dark' : 'base',
+          securityLevel: 'strict',
+          fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
+          themeVariables: isDark
+            ? {
+                primaryColor: '#1e293b',
+                primaryBorderColor: '#60a5fa',
+                primaryTextColor: '#f8fafc',
+                lineColor: '#60a5fa',
+                secondaryColor: '#0f172a',
+                secondaryBorderColor: '#334155',
+                secondaryTextColor: '#f8fafc',
+                tertiaryColor: '#1e293b',
+                tertiaryBorderColor: '#475569',
+                tertiaryTextColor: '#f8fafc',
+                background: 'transparent',
+                mainBkg: '#1e293b',
+                secondBkg: '#0f172a',
+                tertiaryBkg: '#1e293b',
+                edgeLabelBackground: '#1e293b',
+                fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
+              }
+            : {
+                primaryColor: '#ffffff',
+                primaryBorderColor: '#2563eb',
+                primaryTextColor: '#0f172a',
+                lineColor: '#2563eb',
+                secondaryColor: '#ffffff',
+                secondaryBorderColor: '#3b82f6',
+                secondaryTextColor: '#0f172a',
+                tertiaryColor: '#f8fafc',
+                tertiaryBorderColor: '#64748b',
+                tertiaryTextColor: '#0f172a',
+                background: 'transparent',
+                mainBkg: '#ffffff',
+                secondBkg: '#f8fafc',
+                tertiaryBkg: '#f1f5f9',
+                edgeLabelBackground: '#ffffff',
+                fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
+              },
+        });
+
+        const renderId = `mermaid-${uniqueId}-${Math.random().toString(36).substring(2, 7)}`;
+        const { svg: newSvg } = await mermaid.render(renderId, code);
+        if (!isCancelled) {
+          mermaidSvgCache.set(cacheKey, newSvg);
+          setRenderedSvg(newSvg);
+          setError(null);
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Invalid Mermaid syntax');
+        }
+      }
+    };
+
+    renderDiagram();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [code, theme, isDark, uniqueId, cacheKey]);
+
+  if (error) {
+    return (
+      <div className="mermaid-diagram not-prose w-full p-4 my-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-600 dark:text-red-400 text-xs">
+        <div className="flex items-center gap-2 font-semibold mb-1">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>Diagram syntax error</span>
+        </div>
+        <p className="font-mono text-xs opacity-90 break-words">{error}</p>
+      </div>
+    );
+  }
+
+  if (!svg) {
+    return (
+      <div className="mermaid-diagram not-prose w-full flex justify-center items-center py-6 min-h-[90px]">
+        <div className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} flex items-center gap-2`}>
+          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+          <span>Rendering diagram...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mermaid-diagram mermaid-rendered not-prose w-full flex justify-center items-center py-2 overflow-x-auto"
+      data-code={code}
+      data-theme={theme}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+function CodeSnippetHeader({ language, codeString }: { language?: string; codeString: string }) {
+  const theme = useContext(MarkdownThemeContext);
+  const isDark = theme === 'dark';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(codeString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <div
+      data-code-header="true"
+      className={`code-snippet-header flex items-center justify-between px-3.5 py-1.5 border-b font-mono select-none transition-colors ${
+        isDark
+          ? 'bg-slate-900 border-slate-800 text-slate-400'
+          : 'bg-[#f6f8fa] border-[#d0d7de] text-[#57606a]'
+      }`}
+    >
+      <span className={`font-semibold uppercase tracking-wider text-[11px] ${
+        isDark ? 'text-slate-300' : 'text-[#24292f]'
+      }`}>
+        {language || 'code'}
+      </span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+          isDark
+            ? 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+            : 'text-[#57606a] hover:text-[#24292f] hover:bg-slate-200/60'
+        }`}
+        title="Copy code to clipboard"
+      >
+        {copied ? (
+          <>
+            <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+            <span className="text-emerald-500 dark:text-emerald-400 text-[11px] font-medium">Copied!</span>
+          </>
+        ) : (
+          <>
+            <Copy className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-medium">Copy</span>
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -151,28 +338,56 @@ function PreBlock({ children, node }: PreBlockProps) {
     );
   }
 
+  // Extract language from codeChild
+  const codeClass = Array.isArray(classList) ? classList.join(' ') : (classList || '');
+  const langMatch = /language-(\w+)/.exec(codeClass);
+  const language = langMatch?.[1];
+
+  // Extract raw text for the copy button and diagram detection
+  let rawCode = '';
+  const childProps = (children as { props?: { children?: unknown } })?.props;
+  if (childProps && typeof childProps.children === 'string') {
+    rawCode = childProps.children;
+  } else if (Array.isArray(childProps?.children)) {
+    rawCode = childProps.children.map(c => (typeof c === 'string' ? c : '')).join('');
+  }
+
+  const isDiagram = isAsciiDiagram(rawCode, language);
+  const displayLanguage = isDiagram && (!language || language === 'code' || language === 'text' || language === 'ascii')
+    ? 'DIAGRAM'
+    : (language || 'code');
+
   return (
     <InPreContext.Provider value={true}>
-      <pre
-        className="not-prose overflow-x-auto my-4 rounded-xl border border-slate-700/80 shadow-sm font-mono text-slate-100"
-        style={{
-          backgroundColor: '#1e293b',
-          color: '#f8fafc',
-          padding: '1.25rem 1.5rem',
-          margin: '1.5rem 0',
-          fontSize: '0.85rem',
-          lineHeight: '1.5',
-          fontFamily:
-            'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
-          letterSpacing: '0px',
-          fontVariantEastAsian: 'normal',
-          whiteSpace: 'pre',
-          wordSpacing: 'normal',
-          tabSize: 4,
-        }}
+      <div
+        data-ascii-diagram={isDiagram ? 'true' : undefined}
+        className={`code-snippet-wrapper not-prose my-5 rounded-lg overflow-hidden border shadow-xs transition-colors ${
+          isDiagram ? 'is-ascii-diagram ' : ''
+        }${
+          isDark
+            ? 'bg-slate-900 border-slate-800'
+            : 'bg-[#f6f8fa] border-[#d0d7de]'
+        }`}
       >
-        {children}
-      </pre>
+        <CodeSnippetHeader language={displayLanguage} codeString={rawCode.trim()} />
+        <pre
+          className={`overflow-x-auto p-3.5 sm:p-4 font-mono ${
+            isDiagram ? 'ascii-diagram text-[12.5px] sm:text-[13px]' : 'text-sm leading-relaxed'
+          } ${
+            isDark ? 'text-slate-100' : 'text-[#24292f]'
+          }`}
+          style={{
+            backgroundColor: isDark ? '#0f172a' : '#f6f8fa',
+            color: isDark ? '#f8fafc' : '#24292f',
+            margin: 0,
+            whiteSpace: 'pre',
+            tabSize: 4,
+            ...(isDiagram ? { lineHeight: 1.2, letterSpacing: '0px' } : {}),
+          }}
+        >
+          {children}
+        </pre>
+      </div>
     </InPreContext.Provider>
   );
 }
@@ -191,42 +406,18 @@ function CodeBlock({
 
   // Handle mermaid diagrams
   if (lang === 'mermaid') {
-    const cacheKey = `${theme}:${codeString}`;
-    const cachedSvg = mermaidSvgCache.get(cacheKey);
-
-    if (cachedSvg) {
-      return (
-        <div
-          className="mermaid-diagram mermaid-rendered not-prose w-full flex justify-center items-center py-2"
-          data-code={codeString}
-          data-theme={theme}
-          dangerouslySetInnerHTML={{ __html: cachedSvg }}
-        />
-      );
-    }
-
-    return (
-      <div
-        className="mermaid-diagram not-prose w-full flex justify-center items-center py-2 min-h-[90px]"
-        data-code={codeString}
-        data-theme={theme}
-      >
-        <div className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          Rendering diagram...
-        </div>
-      </div>
-    );
+    return <MermaidBlock code={codeString} theme={theme} />;
   }
 
-  // Inline code (e.g. `grid[10000][10000]`) - only when NOT inside <pre>
+  // Inline code (e.g. `const x = 42;`) - when NOT inside <pre>
   if (!isInPre) {
     return (
       <code
         className="not-prose inline-block px-1.5 py-0.5 rounded-md font-mono text-[0.88em] font-medium border transition-colors"
         style={{
-          color: isDark ? '#f472b6' : '#db2777',
-          backgroundColor: isDark ? 'rgba(244, 114, 182, 0.12)' : '#fdf2f8',
-          borderColor: isDark ? 'rgba(244, 114, 182, 0.28)' : '#fbcfe8',
+          color: isDark ? '#f472b6' : '#24292f',
+          backgroundColor: isDark ? 'rgba(244, 114, 182, 0.12)' : 'rgba(175, 184, 193, 0.2)',
+          borderColor: isDark ? 'rgba(244, 114, 182, 0.28)' : 'rgba(175, 184, 193, 0.4)',
         }}
       >
         {children}
@@ -241,11 +432,7 @@ function CodeBlock({
       style={{
         backgroundColor: 'transparent',
         padding: 0,
-        color: '#f8fafc',
-        fontFamily:
-          'ui-monospace, Menlo, Monaco, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono", monospace',
-        letterSpacing: '0px',
-        fontVariantEastAsian: 'normal',
+        color: isDark ? '#f8fafc' : '#24292f',
       }}
       {...props}
     >
@@ -254,183 +441,117 @@ function CodeBlock({
   );
 }
 
+/**
+ * Creates clean anchor slug IDs from heading text for direct linking
+ */
+function getHeadingSlug(children: React.ReactNode): string {
+  const extractText = (node: React.ReactNode): string => {
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(extractText).join('');
+    if (node && typeof node === 'object' && 'props' in node) {
+      return extractText((node as { props?: { children?: React.ReactNode } }).props?.children);
+    }
+    return '';
+  };
+  return extractText(children)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
 export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const isDark = theme === 'dark';
-
-  // Explicit color tokens to avoid OS prefers-color-scheme bleeding into light mode
-  const headingColor = isDark ? '#f8fafc' : '#0f172a';
-  const bodyColor = isDark ? '#cbd5e1' : '#334155';
-  const mutedColor = isDark ? '#94a3b8' : '#64748b';
-
-  // 1. Initialize mermaid ONLY when theme changes (NOT on every keystroke)
-  useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: isDark ? 'dark' : 'base',
-      securityLevel: 'strict',
-      fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
-      themeVariables: isDark
-        ? {
-            primaryColor: '#1e293b',
-            primaryBorderColor: '#475569',
-            primaryTextColor: '#f8fafc',
-            lineColor: '#60a5fa',
-            secondaryColor: '#0f172a',
-            secondaryBorderColor: '#334155',
-            secondaryTextColor: '#f8fafc',
-            tertiaryColor: '#1e293b',
-            tertiaryBorderColor: '#475569',
-            tertiaryTextColor: '#f8fafc',
-            background: 'transparent',
-            mainBkg: '#1e293b',
-            secondBkg: '#0f172a',
-            tertiaryBkg: '#1e293b',
-            edgeLabelBackground: '#1e293b',
-            fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
-          }
-        : {
-            primaryColor: '#ffffff',
-            primaryBorderColor: '#2563eb',
-            primaryTextColor: '#0f172a',
-            lineColor: '#2563eb',
-            secondaryColor: '#ffffff',
-            secondaryBorderColor: '#3b82f6',
-            secondaryTextColor: '#0f172a',
-            tertiaryColor: '#f8fafc',
-            tertiaryBorderColor: '#64748b',
-            tertiaryTextColor: '#0f172a',
-            background: 'transparent',
-            mainBkg: '#ffffff',
-            secondBkg: '#f8fafc',
-            tertiaryBkg: '#f1f5f9',
-            edgeLabelBackground: '#ffffff',
-            fontFamily: 'var(--font-plus-jakarta-sans), Inter, system-ui, sans-serif',
-          },
-    });
-  }, [isDark]);
-
-  // 2. Debounced background rendering for uncached Mermaid diagrams
-  useEffect(() => {
-    let isCancelled = false;
-
-    const timeoutId = setTimeout(async () => {
-      if (!previewRef.current) return;
-      const elements = previewRef.current.querySelectorAll<HTMLElement>('.mermaid-diagram:not(.mermaid-rendered)');
-
-      for (let i = 0; i < elements.length; i++) {
-        if (isCancelled) break;
-        const el = elements[i];
-        const code = el.getAttribute('data-code') || '';
-        const elTheme = el.getAttribute('data-theme') || theme;
-        if (!code.trim()) continue;
-
-        const cacheKey = `${elTheme}:${code}`;
-        if (mermaidSvgCache.has(cacheKey)) {
-          el.innerHTML = mermaidSvgCache.get(cacheKey)!;
-          el.classList.add('mermaid-rendered');
-          continue;
-        }
-
-        try {
-          const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
-          const { svg } = await mermaid.render(id, code);
-          if (isCancelled) break;
-          mermaidSvgCache.set(cacheKey, svg);
-          el.innerHTML = svg;
-          el.classList.add('mermaid-rendered');
-        } catch (error) {
-          if (!isCancelled) {
-            el.innerHTML = '';
-            const errDiv = document.createElement('div');
-            errDiv.className =
-              'text-red-500 p-3 bg-red-500/10 border border-red-500/20 rounded text-xs';
-            errDiv.textContent = `Diagram syntax error: ${
-              error instanceof Error ? error.message : 'Invalid Mermaid syntax'
-            }`;
-            el.appendChild(errDiv);
-            el.classList.add('mermaid-rendered');
-          }
-        }
-      }
-    }, 120);
-
-    return () => {
-      isCancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [markdown, theme]);
 
   return (
     <div
       ref={previewRef}
       id="markdown-preview"
-      className={`prose prose-lg max-w-none px-12 py-8 transition-colors ${
-        isDark ? 'prose-invert bg-slate-900' : 'bg-white'
+      className={`prose prose-lg max-w-none px-6 sm:px-12 py-8 transition-colors ${
+        isDark ? 'prose-invert bg-slate-900 text-slate-200' : 'bg-white text-slate-800'
       }`}
       style={{
-        color: bodyColor,
-        backgroundColor: isDark ? '#0f172a' : '#ffffff',
         fontFamily: 'var(--font-plus-jakarta-sans), Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}
     >
       <MarkdownThemeContext.Provider value={theme}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: false }]]}
+          rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: false, languages: highlightLanguages }]]}
           components={{
-            h1: ({ children }) => (
-              <h1
-                className="text-4xl sm:text-5xl font-extrabold tracking-tight mt-8 mb-5 leading-tight"
-                style={{ color: headingColor }}
-              >
-                {children}
-              </h1>
-            ),
-            h2: ({ children }) => (
-              <h2
-                className="text-2xl sm:text-3xl font-bold tracking-tight mt-8 mb-4 leading-snug"
-                style={{ color: headingColor }}
-              >
-                {children}
-              </h2>
-            ),
-            h3: ({ children }) => (
-              <h3
-                className="text-xl sm:text-2xl font-bold tracking-tight mt-6 mb-3"
-                style={{ color: headingColor }}
-              >
-                {children}
-              </h3>
-            ),
-            h4: ({ children }) => (
-              <h4
-                className="text-lg sm:text-xl font-semibold tracking-tight mt-4 mb-2"
-                style={{ color: headingColor }}
-              >
-                {children}
-              </h4>
-            ),
-            h5: ({ children }) => (
-              <h5
-                className="text-base sm:text-lg font-semibold mt-3 mb-2"
-                style={{ color: headingColor }}
-              >
-                {children}
-              </h5>
-            ),
-            h6: ({ children }) => (
-              <h6
-                className="text-sm sm:text-base font-semibold mt-3 mb-2"
-                style={{ color: mutedColor }}
-              >
-                {children}
-              </h6>
-            ),
+            h1: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h1
+                  id={slug}
+                  className="scroll-mt-6 text-3xl sm:text-4xl font-extrabold tracking-tight mt-8 mb-5 leading-tight text-slate-900 dark:text-slate-100"
+                >
+                  {children}
+                </h1>
+              );
+            },
+            h2: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h2
+                  id={slug}
+                  className="scroll-mt-6 text-2xl sm:text-3xl font-bold tracking-tight mt-8 mb-4 leading-snug text-slate-900 dark:text-slate-100"
+                >
+                  {children}
+                </h2>
+              );
+            },
+            h3: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h3
+                  id={slug}
+                  className="scroll-mt-6 text-xl sm:text-2xl font-bold tracking-tight mt-6 mb-3 text-slate-900 dark:text-slate-100"
+                >
+                  {children}
+                </h3>
+              );
+            },
+            h4: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h4
+                  id={slug}
+                  className="scroll-mt-6 text-lg sm:text-xl font-semibold tracking-tight mt-4 mb-2 text-slate-900 dark:text-slate-200"
+                >
+                  {children}
+                </h4>
+              );
+            },
+            h5: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h5
+                  id={slug}
+                  className="scroll-mt-6 text-base sm:text-lg font-semibold mt-3 mb-2 text-slate-900 dark:text-slate-200"
+                >
+                  {children}
+                </h5>
+              );
+            },
+            h6: ({ children }) => {
+              const slug = getHeadingSlug(children);
+              return (
+                <h6
+                  id={slug}
+                  className="scroll-mt-6 text-sm sm:text-base font-semibold mt-3 mb-2 text-slate-600 dark:text-slate-400"
+                >
+                  {children}
+                </h6>
+              );
+            },
             a: SafeAnchor,
             img: SafeImage,
             p: ({ children }) => (
-              <p className="my-4 leading-relaxed" style={{ color: bodyColor }}>
+              <p className="my-4 leading-relaxed text-slate-700 dark:text-slate-300">
                 {children}
               </p>
             ),
@@ -441,81 +562,95 @@ export default function MarkdownPreview({ markdown, theme = 'light' }: MarkdownP
                 className="my-6 border-t border-slate-200 dark:border-slate-800"
               />
             ),
-          ul: ({ children }) => (
-            <ul className="list-disc list-outside my-4 ml-6 space-y-1" style={{ color: bodyColor }}>
-              {children}
-            </ul>
-          ),
-          ol: ({ children }) => (
-            <ol className="list-decimal list-outside my-4 ml-6 space-y-1" style={{ color: bodyColor }}>
-              {children}
-            </ol>
-          ),
-          li: ({ children }) => (
-            <li className="pl-1" style={{ color: bodyColor }}>
-              {children}
-            </li>
-          ),
-          blockquote: ({ children }) => (
-            <blockquote
-              className="border-l-4 border-blue-500 pl-4 italic my-4"
-              style={{ color: mutedColor }}
-            >
-              {children}
-            </blockquote>
-          ),
-          table: ({ children }) => (
-            <div className="overflow-x-auto my-6">
-              <table
-                className={`min-w-full border-collapse ${
-                  isDark ? 'border border-slate-700' : 'border border-slate-300'
-                }`}
+            ul: ({ children }) => (
+              <ul className="list-disc list-outside my-4 ml-6 space-y-1 text-slate-700 dark:text-slate-300">
+                {children}
+              </ul>
+            ),
+            ol: ({ children }) => (
+              <ol className="list-decimal list-outside my-4 ml-6 space-y-1 text-slate-700 dark:text-slate-300">
+                {children}
+              </ol>
+            ),
+            li: ({ children, className, ...props }) => {
+              const isTaskList = className?.includes('task-list-item');
+              return (
+                <li
+                  className={`${isTaskList ? 'list-none flex items-start gap-2.5 -ml-6 my-1' : 'pl-1'} text-slate-700 dark:text-slate-300`}
+                  {...props}
+                >
+                  {children}
+                </li>
+              );
+            },
+            input: ({ type, checked, disabled, ...props }) => {
+              if (type === 'checkbox') {
+                return (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    readOnly
+                    className="mt-1 h-4 w-4 rounded text-blue-600 border-slate-300 dark:border-slate-700 focus:ring-blue-500 cursor-default"
+                    {...props}
+                  />
+                );
+              }
+              return <input type={type} {...props} />;
+            },
+            blockquote: ({ children }) => (
+              <blockquote
+                className="border-l-4 border-blue-500 pl-4 italic my-4 text-slate-600 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-800/40 py-2 pr-3 rounded-r"
               >
                 {children}
-              </table>
-            </div>
-          ),
-          thead: ({ children }) => (
-            <thead className={isDark ? 'bg-slate-800' : 'bg-slate-100'}>
-              {children}
-            </thead>
-          ),
-          tbody: ({ children }) => (
-            <tbody className={isDark ? 'bg-slate-900' : 'bg-white'}>
-              {children}
-            </tbody>
-          ),
-          tr: ({ children }) => (
-            <tr className={isDark ? 'border-b border-slate-700' : 'border-b border-slate-200'}>
-              {children}
-            </tr>
-          ),
-          th: ({ children }) => (
-            <th
-              className={`px-4 py-3 text-left text-sm font-bold border-r ${
-                isDark
-                  ? 'text-slate-100 border-slate-700'
-                  : 'text-slate-900 border-slate-200'
-              }`}
-            >
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td
-              className={`px-4 py-3 text-sm border-r ${
-                isDark
-                  ? 'text-slate-300 border-slate-700'
-                  : 'text-slate-700 border-slate-200'
-              }`}
-            >
-              {children}
-            </td>
-          ),
-        }}
-      >
-        {markdown}
-      </ReactMarkdown>
+              </blockquote>
+            ),
+            table: ({ children }) => (
+              <div className="overflow-x-auto my-6">
+                <table
+                  className="min-w-full border-collapse border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                >
+                  {children}
+                </table>
+              </div>
+            ),
+            thead: ({ children }) => (
+              <thead className="bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700">
+                {children}
+              </thead>
+            ),
+            tbody: ({ children }) => (
+              <tbody className="bg-white dark:bg-slate-900/60 divide-y divide-slate-200 dark:divide-slate-700">
+                {children}
+              </tbody>
+            ),
+            tr: ({ children }) => (
+              <tr className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                {children}
+              </tr>
+            ),
+            th: ({ children, style, ...props }) => (
+              <th
+                className="px-4 py-3 text-sm font-bold text-left border-r border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                style={style}
+                {...props}
+              >
+                {children}
+              </th>
+            ),
+            td: ({ children, style, ...props }) => (
+              <td
+                className="px-4 py-3 text-sm border-r border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+                style={style}
+                {...props}
+              >
+                {children}
+              </td>
+            ),
+          }}
+        >
+          {markdown}
+        </ReactMarkdown>
       </MarkdownThemeContext.Provider>
     </div>
   );
